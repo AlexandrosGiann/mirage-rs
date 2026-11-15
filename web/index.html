@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mirage-rs</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%2322a06b' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%2322a06b'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f6f7f5; --panel: #ffffff; --ink: #1b1f1d; --muted: #5d6662; --line: #dde2df;
+    --accent: #1f8f5f; --accent-ink: #ffffff; --warn: #b4441c; --code: #f0f2f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111413; --panel: #1a1e1c; --ink: #e8ece9; --muted: #9aa49f; --line: #2c3330; --accent: #3dbb84; --accent-ink: #08130e; --warn: #ef8a62; --code: #222826; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 18px 24px 8px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  #status { margin-left: auto; font-size: 13px; color: var(--muted); }
+  #status.ok::before { content: "● "; color: var(--accent); }
+  #status.bad::before { content: "● "; color: var(--warn); }
+  main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); gap: 16px; padding: 8px 24px 32px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 8px 16px 24px; } header { padding: 16px 16px 8px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+  #drop { position: relative; display: grid; place-items: center; min-height: 340px; border: 2px dashed var(--line); border-radius: 10px; cursor: pointer; overflow: hidden; }
+  #drop.over { border-color: var(--accent); }
+  #drop .hint { color: var(--muted); text-align: center; padding: 24px; }
+  #stage { position: relative; display: none; max-width: 100%; }
+  #stage img { display: block; max-width: 100%; max-height: 70vh; border-radius: 6px; }
+  #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-top: 12px; font-size: 14px; }
+  .controls label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  select, input[type=number] { background: var(--code); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
+  input[type=number] { width: 64px; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 8px 16px; font: 600 14px system-ui, sans-serif; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -2px 0 10px; flex-wrap: wrap; }
+  .tabs button { background: none; color: var(--muted); border-radius: 0; padding: 6px 10px; font-weight: 500; border-bottom: 2px solid transparent; }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+  #trace { white-space: pre-wrap; font: 12.5px/1.5 ui-monospace, "Cascadia Code", Menlo, monospace; background: var(--code); border-radius: 8px; padding: 10px; min-height: 64px; max-height: 260px; overflow: auto; }
+  .obj { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: start; padding: 7px 4px; border-bottom: 1px solid var(--line); cursor: default; }
+  .obj:hover { background: var(--code); }
+  .sw { width: 12px; height: 12px; border-radius: 3px; margin-top: 5px; }
+  .obj .name { font-weight: 600; }
+  .obj .meta { color: var(--muted); font-size: 13px; }
+  .score { font: 12px ui-monospace, monospace; color: var(--muted); }
+  pre.json { font: 12px/1.45 ui-monospace, monospace; background: var(--code); border-radius: 8px; padding: 10px; overflow: auto; max-height: 60vh; margin: 0; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+  .muted { color: var(--muted); }
+  .err { color: var(--warn); }
+  .timing { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  h2 { font-size: 14px; margin: 14px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>mirage-rs</h1>
+  <span class="sub" id="sub">Cactus Mirage vision model in pure JavaScript</span>
+  <span id="status">connecting…</span>
+</header>
+<main>
+  <section class="panel">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose an image">
+      <div class="hint" id="hint"><strong>Drop a PNG or JPEG here</strong><br>or click to choose a file</div>
+      <div id="stage"><img id="img" alt=""><canvas id="overlay"></canvas></div>
+      <input id="file" type="file" accept="image/*" hidden>
+    </div>
+    <div class="controls">
+      <label>Language <select id="language">
+        <option value="en">English</option><option value="de">Deutsch</option><option value="fr">Français</option><option value="es">Español</option>
+        <option value="it">Italiano</option><option value="nl">Nederlands</option><option value="pl">Polski</option>
+      </select></label>
+      <label>Object conf <input id="conf" type="number" min="0.01" max="0.99" step="0.05" value="0.3"></label>
+      <label>Text conf <input id="text_conf" type="number" min="0.01" max="0.99" step="0.05" value="0.3"></label>
+      <label><input id="masks" type="checkbox" checked> Masks</label>
+      <button id="run" disabled>Describe</button>
+      <button id="clear" class="ghost" disabled>Clear</button>
+      <button id="sample" class="ghost">Use sample image</button>
+    </div>
+    <h2>Decoder output</h2>
+    <div id="trace" class="muted">The model's compact output streams here while it decodes.</div>
+    <div id="timing" class="timing"></div>
+  </section>
+  <section class="panel">
+    <div class="tabs" role="tablist">
+      <button class="on" data-tab="objects">Objects</button>
+      <button data-tab="scene">Scene</button>
+      <button data-tab="text">Text</button>
+      <button data-tab="relations">Relations</button>
+      <button data-tab="json">JSON</button>
+    </div>
+    <div id="out"><p class="muted">Results appear here.</p></div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#469990', '#9a6324', '#800000', '#808000', '#000075', '#e6a700'];
+let file = null, result = null, tab = 'objects', hover = null;
+
+// ---- where the model runs: 'device' (Web Worker in this browser) or 'server' (Node worker thread)
+let mode = 'server'; // the Rust server runs the model
+const status = (text, cls = '') => { const s = $('#status'); s.textContent = text; s.className = cls; };
+let healthTimer = null;
+async function health() {
+  clearTimeout(healthTimer);
+  if (mode !== 'server') return;
+  try {
+    const h = await (await fetch('/api/health')).json();
+    if (mode !== 'server') return;
+    if (h.error) return status('model error: ' + h.error, 'bad');
+    status(h.ready ? `server ready · ${h.weights}` : 'server loading model…', h.ready ? 'ok' : '');
+    if (!h.ready) healthTimer = setTimeout(health, 1000);
+  } catch { if (mode === 'server') { status('server unreachable', 'bad'); healthTimer = setTimeout(health, 3000); } }
+}
+
+let worker = null, deviceState = 'idle', deviceInfo = '', jobId = 0, onJob = null;
+function deviceStatus() {
+  if (mode !== 'device') return;
+  if (deviceState === 'ready') status(`on device · ${deviceInfo}`, 'ok');
+  else if (deviceState === 'error') status(deviceInfo, 'bad');
+  else status(deviceInfo || 'loading model…');
+}
+function startDevice() {
+  if (worker) return deviceStatus();
+  if (typeof Worker === 'undefined') { deviceState = 'error'; deviceInfo = 'this browser has no Web Workers'; return deviceStatus(); }
+  worker = new Worker('/src/browser-worker.js', { type: 'module' });
+  worker.onerror = (e) => { deviceState = 'error'; deviceInfo = 'worker failed: ' + (e.message || 'module workers unsupported?'); deviceStatus(); onJob?.({ type: 'error', error: deviceInfo }); worker = null; };
+  worker.onmessage = ({ data: ev }) => {
+    if (ev.id != null) return ev.id === jobId && onJob?.(ev);
+    if (ev.type === 'progress') { deviceInfo = `downloading model ${(ev.loaded / 1e6).toFixed(1)} / ${(ev.total / 1e6).toFixed(1)} MB`; }
+    if (ev.type === 'stage' && ev.stage === 'init') deviceInfo = 'preparing model…';
+    if (ev.type === 'ready') { deviceState = 'ready'; deviceInfo = ev.cached ? `loaded from cache in ${((ev.download_ms + ev.init_ms) / 1000).toFixed(1)} s` : `downloaded and loaded in ${((ev.download_ms + ev.init_ms) / 1000).toFixed(1)} s`; }
+    if (ev.type === 'fatal') { deviceState = 'error'; deviceInfo = 'model error: ' + ev.error; }
+    deviceStatus();
+    if (ev.type === 'ready' || ev.type === 'fatal') updateRun();
+  };
+  deviceState = 'loading'; deviceInfo = 'loading model…'; deviceStatus();
+  worker.postMessage({ type: 'load', urls: ['/models/mirage.cact'] });
+}
+function setMode(m) {
+  mode = m;
+    $('#sub').textContent = m === 'device' ? 'Cactus Mirage vision model, running in pure JavaScript in this browser' : 'Cactus Mirage vision model, running in pure Rust on this server';
+  if (m === 'device') startDevice(); else health();
+  updateRun();
+}
+let running = false;
+function updateRun() { $('#run').disabled = running || !file || (mode === 'device' && deviceState !== 'ready'); }
+
+// decode any image the browser can display (PNG, JPEG, WebP, HEIC on Safari…) to packed RGB, EXIF-rotated
+const MAX_SIDE = 4096;
+async function toRGB(blob) {
+  const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+  const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bmp, 0, 0, w, h); bmp.close?.();
+  const rgba = g.getImageData(0, 0, w, h).data, data = new Uint8Array(w * h * 3);
+  for (let i = 0, j = 0; j < data.length; i += 4, j += 3) { data[j] = rgba[i]; data[j + 1] = rgba[i + 1]; data[j + 2] = rgba[i + 2]; }
+  return { data, width: w, height: h };
+}
+// the server only decodes PNG/JPEG: re-encode anything else in the browser first
+async function toUpload(f) {
+  if (/^image\/(png|jpeg)$/.test(f.type)) return f;
+  const { data, width, height } = await toRGB(f);
+  const cv = Object.assign(document.createElement('canvas'), { width, height });
+  const g = cv.getContext('2d'), im = g.createImageData(width, height);
+  for (let i = 0, j = 0; j < data.length; i += 4, j += 3) { im.data[i] = data[j]; im.data[i + 1] = data[j + 1]; im.data[i + 2] = data[j + 2]; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  return new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.95));
+}
+
+function setFile(f) {
+  if (!f || !/^image\//.test(f.type)) { alert('Please choose an image.'); return; }
+  file = f; result = null;
+  $('#img').src = URL.createObjectURL(f);
+  $('#hint').style.display = 'none'; $('#stage').style.display = 'block';
+  $('#clear').disabled = false; updateRun();
+  $('#trace').textContent = ''; $('#timing').textContent = ''; render();
+}
+$('#drop').addEventListener('click', () => $('#file').click());
+$('#sample').addEventListener('click', async () => { const b = await (await fetch('/sample.png')).blob(); setFile(new File([b], 'sample.png', { type: 'image/png' })); });
+$('#drop').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') $('#file').click(); });
+$('#file').addEventListener('change', (e) => setFile(e.target.files[0]));
+for (const ev of ['dragenter', 'dragover']) $('#drop').addEventListener(ev, (e) => { e.preventDefault(); $('#drop').classList.add('over'); });
+for (const ev of ['dragleave', 'drop']) $('#drop').addEventListener(ev, (e) => { e.preventDefault(); $('#drop').classList.remove('over'); });
+$('#drop').addEventListener('drop', (e) => setFile(e.dataTransfer.files[0]));
+$('#img').addEventListener('load', draw);
+window.addEventListener('resize', draw);
+$('#clear').addEventListener('click', () => { file = null; result = null; $('#stage').style.display = 'none'; $('#hint').style.display = ''; updateRun(); $('#clear').disabled = true; $('#trace').textContent = ''; render(); });
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b)); tab = b.dataset.tab; render();
+}));
+
+$('#run').addEventListener('click', async () => {
+  if (!file) return;
+  const options = {
+    language: $('#language').value,
+    conf: Number($('#conf').value), text_conf: Number($('#text_conf').value),
+    fields: ['bbox', 'score', 'position', 'description', 'point'].concat($('#masks').checked ? ['mask'] : []),
+    mask_format: 'polygons',
+  };
+  running = true; updateRun(); result = null; render();
+  const tr = $('#trace'); tr.classList.remove('muted'); tr.textContent = mode === 'device' ? 'decoding image…' : 'queued…';
+  let text = '';
+  const where = mode === 'device' ? 'on this device' : 'on the server';
+  const handle = (ev) => {
+    if (ev.type === 'queued') tr.textContent = ev.position ? `queued (position ${ev.position})…` : 'starting…';
+    if (ev.type === 'stage' && ev.stage === 'perceive') tr.textContent = 'encoding image, detecting regions…';
+    if (ev.type === 'stage' && ev.stage === 'decode') { text = ''; tr.textContent = ''; }
+    if (ev.type === 'token') { text += ev.text; tr.textContent = text; tr.scrollTop = tr.scrollHeight; }
+    if (ev.type === 'error') throw new Error(ev.error);
+    if (ev.type === 'result') {
+      result = ev.result;
+      const t = ev.meta?.timing || {};
+      $('#timing').textContent = `${where} · perception ${t.perceive_ms} ms · decoding ${t.decode_ms} ms · assembly ${t.assemble_ms} ms · total ${ev.meta?.total_ms} ms`;
+    }
+  };
+  try {
+    if (mode === 'device') {
+      if (!worker || deviceState !== 'ready') throw new Error('the model is not loaded on this device yet');
+      const image = await toRGB(file);
+      await new Promise((resolve, reject) => {
+        const id = ++jobId;
+        onJob = (ev) => {
+          try { handle(ev); } catch (e) { onJob = null; return reject(e); }
+          if (ev.type === 'result') { onJob = null; resolve(); }
+        };
+        worker.postMessage({ type: 'describe', id, image, options }, [image.data.buffer]);
+      });
+    } else {
+      const body = await toUpload(file);
+      const res = await fetch('/api/describe?options=' + encodeURIComponent(JSON.stringify(options)), {
+        method: 'POST', headers: { 'content-type': body.type, accept: 'application/x-ndjson' }, body,
+      });
+      if (!res.ok && res.headers.get('content-type')?.includes('json')) throw new Error((await res.json()).error);
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+          if (line.trim()) handle(JSON.parse(line));
+        }
+      }
+    }
+  } catch (e) {
+    tr.innerHTML = ''; const s = document.createElement('span'); s.className = 'err'; s.textContent = 'Error: ' + e.message; tr.append(s);
+  }
+  running = false; updateRun(); render(); draw();
+});
+setMode(mode);
+
+function color(id) { return PALETTE[(Number(id) - 1 + PALETTE.length * 8) % PALETTE.length] || PALETTE[0]; }
+
+function draw() {
+  const img = $('#img'), cv = $('#overlay');
+  if (!img.naturalWidth) return;
+  const W = img.clientWidth, H = img.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  if (!result) return;
+  const sx = W / 1000, sy = H / 1000;
+  const objs = result.objects || [];
+  const placed = [];
+  objs.forEach((o, k) => {
+    const c = color(o.id), dim = hover !== null && hover !== k;
+    g.globalAlpha = dim ? 0.15 : 1;
+    const polys = Array.isArray(o.mask) ? (Array.isArray(o.mask[0]) ? o.mask : [o.mask]) : [];
+    g.fillStyle = c + '55';
+    for (const p of polys) {
+      if (p.length < 6) continue;
+      g.beginPath(); g.moveTo(p[0] * sx, p[1] * sy);
+      for (let i = 2; i < p.length; i += 2) g.lineTo(p[i] * sx, p[i + 1] * sy);
+      g.closePath(); g.fill();
+    }
+    if (o.bbox) {
+      const [x0, y0, x1, y1] = o.bbox;
+      g.strokeStyle = c; g.lineWidth = 2; g.strokeRect(x0 * sx, y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy);
+      const label = `${o.name}${o.score != null ? ' ' + Math.round(o.score * 100) + '%' : ''}`;
+      g.font = '600 12px system-ui, sans-serif';
+      const tw = g.measureText(label).width + 8;
+      let ty = Math.max(0, y0 * sy - 18);
+      while (placed.some((p) => x0 * sx < p.x + p.w && p.x < x0 * sx + tw && Math.abs(p.y - ty) < 18)) ty += 18;
+      placed.push({ x: x0 * sx, y: ty, w: tw });
+      g.fillStyle = c; g.fillRect(x0 * sx, ty, tw, 18);
+      g.fillStyle = '#fff'; g.fillText(label, x0 * sx + 4, ty + 13);
+    }
+  });
+  g.globalAlpha = 1;
+  for (const t of result.text || []) {
+    if (!t.bbox) continue;
+    const [x0, y0, x1, y1] = t.bbox;
+    g.setLineDash([4, 3]); g.strokeStyle = '#ffd400'; g.lineWidth = 2; g.strokeRect(x0 * sx, y0 * sy, (x1 - x0) * sx, (y1 - y0) * sy); g.setLineDash([]);
+  }
+}
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+function render() {
+  const out = $('#out'); out.innerHTML = '';
+  if (!result) { out.append(el('p', 'muted', file ? 'Press Describe to run the model.' : 'Results appear here.')); return; }
+  const names = new Map([...(result.objects || []), ...(result.regions || [])].map((o) => [o.id, o.name]));
+  if (tab === 'objects') {
+    const objs = result.objects || [];
+    if (!objs.length && !(result.regions || []).length) out.append(el('p', 'muted', 'No objects.'));
+    objs.forEach((o, k) => {
+      const row = el('div', 'obj');
+      const sw = el('div', 'sw'); sw.style.background = color(o.id); row.append(sw);
+      const mid = el('div'); mid.append(el('div', 'name', `${o.id} · ${o.name}`));
+      const d = o.description ? Object.entries(o.description).map(([a, b]) => `${a}: ${b}`).join(' · ') : '';
+      mid.append(el('div', 'meta', [o.position, d].filter(Boolean).join(' — ')));
+      row.append(mid); row.append(el('div', 'score', o.score != null ? o.score.toFixed(3) : ''));
+      row.addEventListener('mouseenter', () => { hover = k; draw(); });
+      row.addEventListener('mouseleave', () => { hover = null; draw(); });
+      out.append(row);
+    });
+    if ((result.regions || []).length) {
+      out.append(el('h2', null, 'Regions without a box'));
+      for (const r of result.regions) {
+        const row = el('div', 'obj'); const sw = el('div', 'sw'); sw.style.background = 'var(--line)'; row.append(sw);
+        const mid = el('div'); mid.append(el('div', 'name', `${r.id} · ${r.name}`));
+        mid.append(el('div', 'meta', [r.position, r.description && Object.entries(r.description).map(([a, b]) => `${a}: ${b}`).join(' · ')].filter(Boolean).join(' — ')));
+        row.append(mid); row.append(el('div')); out.append(row);
+      }
+    }
+  } else if (tab === 'scene') {
+    const dl = el('dl', 'kv');
+    for (const [k, v] of Object.entries(result.scene || {})) { dl.append(el('dt', null, k)); dl.append(el('dd', null, v)); }
+    out.append(dl.children.length ? dl : el('p', 'muted', 'No scene fields.'));
+    if (result.reasoning) { out.append(el('h2', null, 'Reasoning trace')); out.append(el('p', null, result.reasoning)); }
+  } else if (tab === 'text') {
+    const t = result.text || [];
+    if (!t.length) out.append(el('p', 'muted', 'No text read.'));
+    for (const x of t) { const row = el('div', 'obj'); const sw = el('div', 'sw'); sw.style.background = '#ffd400'; row.append(sw); row.append(el('div', 'name', x.string)); row.append(el('div', 'score', x.score != null ? x.score.toFixed(3) : '')); out.append(row); }
+  } else if (tab === 'relations') {
+    const r = [...(result.relations || []), ...(result.events || []).map((e) => ({ subject: e.actor, predicate: e.action, object: e.target }))];
+    if (!r.length) out.append(el('p', 'muted', 'No relations or events.'));
+    for (const x of r) out.append(el('div', 'obj', `${names.get(x.subject) ?? x.subject} (${x.subject})  ${x.predicate.replaceAll('_', ' ')}  ${x.object != null ? (names.get(x.object) ?? x.object) + ' (' + x.object + ')' : ''}`));
+  } else {
+    out.append(el('pre', 'json', JSON.stringify(result, (k, v) => (k === 'mask' && Array.isArray(v) ? `[${(Array.isArray(v[0]) ? v.map((p) => p.length / 2).reduce((a, b) => a + b, 0) : v.length / 2)} points]` : v), 2)));
+  }
+}
+render();
+</script>
+</body>
+</html>

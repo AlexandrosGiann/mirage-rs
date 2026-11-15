@@ -1,0 +1,5 @@
+Copyright 2026 the mirage-rs authors
+
+This product is an independent Rust implementation of the Mirage model by
+Cactus Compute (https://cactuscompute.com), whose architecture and weights are
+released under the Apache License 2.0. The weights are not included.

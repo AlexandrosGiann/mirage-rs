@@ -1,0 +1,33 @@
+[package]
+name = "mirage-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Pure Rust inference for Cactus Mirage, the 22 MB on-device vision model: detection, masks, OCR and structured scene description without C code or WebAssembly."
+license = "Apache-2.0"
+repository = "https://github.com/AlexandrosGiann/mirage-rs"
+readme = "README.md"
+keywords = ["mirage", "vision", "object-detection", "ocr", "segmentation"]
+categories = ["computer-vision", "science"]
+
+[lib]
+name = "mirage"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mirage"
+path = "src/main.rs"
+
+[dependencies]
+# Pure-Rust decoders only (png + zune-jpeg): no C libraries.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+# The end-to-end tests run the whole model; unoptimised they take minutes.
+[profile.test]
+opt-level = 3
